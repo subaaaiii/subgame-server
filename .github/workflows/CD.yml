@@ -1,5 +1,5 @@
 
-name: BNSP2 Server CD
+name: subgame Server CD
 
 on:
   push:
