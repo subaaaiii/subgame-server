@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	fmt.Println("2. REDIS OK")
 
 	database.InitDB()
-	fmt.Println("3. DB OK")
+	fmt.Println("3. DATABASE OK")
 
 	os.Setenv("MIDTRANS_SERVER_KEY", "dummy-server-key")
 	config.InitMidtrans()
