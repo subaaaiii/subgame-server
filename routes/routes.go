@@ -5,6 +5,7 @@ import (
 	"bnsp2/server/controllers"
 	"bnsp2/server/handlers"
 	"bnsp2/server/middlewares"
+	"net/http"
 	"strings"
 	"time"
 
@@ -34,6 +35,14 @@ func SetupRouter() *gin.Engine {
 		}
 
 		c.Next()
+	})
+
+	router.GET("/api/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "success",
+			"message": "SubGAME API is running",
+			"version": "CI/CD test v1",
+		})
 	})
 
 	// route register
