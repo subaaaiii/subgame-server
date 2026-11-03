@@ -8,6 +8,7 @@ import (
 	"bnsp2/server/redis"
 	"bnsp2/server/services"
 	"bnsp2/server/structs"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -109,11 +110,26 @@ func CreateOrder(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
+	key := fmt.Sprintf("order_pending:%s", order.Id)
+
+	err := redis.RedisClient.Set(
+		ctx,
+		key,
+		"1",
+		16*time.Minute,
+	).Err()
+	if err != nil {
+		log.Printf("Gagal menyimpan order ke Redis: %v\n", err)
+	}
+
 	itemName := product.Title
 	if len(itemName) > 50 {
 		itemName = itemName[:47] + "..."
 	}
 
+	orderTime := time.Now().Format("2006-01-02 15:04:05 -0700")
 	snapReq := &snap.Request{
 		TransactionDetails: midtrans.TransactionDetails{
 			OrderID:  order.Id,
@@ -130,6 +146,11 @@ func CreateOrder(c *gin.Context) {
 				Qty:   int32(req.Qty),
 				Name:  itemName,
 			},
+		},
+		Expiry: &snap.ExpiryDetails{
+			StartTime: orderTime,
+			Duration:  15,
+			Unit:      "minute",
 		},
 	}
 
@@ -206,7 +227,7 @@ func PaymentCallback(c *gin.Context) {
 	dbErr := database.DB.Transaction(func(tx *gorm.DB) error {
 		var product models.Product
 
-		if err := tx.First(&order, "id = ?", orderId).Error; err != nil {
+		if err := tx.Preload("User").First(&order, "id = ?", orderId).Error; err != nil {
 			return err
 		}
 
@@ -273,37 +294,40 @@ func PaymentCallback(c *gin.Context) {
 		return
 	}
 
-	if shouldInvalidateProductCache {
-		ctx := c.Request.Context()
+	fmt.Println("apakah ini dijalankan ???")
 
-		redis.RedisClient.Del(
-			ctx,
-			fmt.Sprintf("product:%d", affectedProduct.Id),
-		)
-		redis.RedisClient.Del(ctx, "products_all_recent")
+	go func(product models.Product, oId string, invalidateProduct bool) {
+		ctx := context.Background()
+		fmt.Println("apakah ini dijalankan")
 
-		helpers.DeleteByPattern(
-			ctx,
-			fmt.Sprintf("products_public:game:%d:*", affectedProduct.GameId),
-		)
+		redis.RedisClient.Del(ctx, fmt.Sprintf("order_pending:%s", oId))
+		log.Printf("[Redis] Timer order_pending:%s dihapus", oId)
 
-		helpers.DeleteByPattern(
-			ctx,
-			fmt.Sprintf("products:user:%d:*", affectedProduct.UserId),
-		)
+		if invalidateProduct {
+			redis.RedisClient.Del(ctx, fmt.Sprintf("product:%d", product.Id))
+			redis.RedisClient.Del(ctx, "products_all_recent")
+
+			helpers.DeleteByPattern(ctx, fmt.Sprintf("products_public:game:%d:*", product.GameId))
+			helpers.DeleteByPattern(ctx, fmt.Sprintf("products:user:%d:*", product.UserId))
+
+			log.Printf("[Cache] Berhasil menghapus cache untuk produk ID: %d", product.Id)
+		}
+	}(affectedProduct, orderId, shouldInvalidateProductCache)
+
+	var productTitle string
+	if affectedProduct.Id != 0 {
+		productTitle = affectedProduct.Title
+	} else {
+		var p models.Product
+		database.DB.Select("title").First(&p, order.ProductId)
+		productTitle = p.Title
 	}
-
-	var user models.User
-	database.DB.Select("name", "email").First(&user, order.UserId)
-
-	var product models.Product
-	database.DB.Select("title").First(&product, order.ProductId)
 
 	if shouldSendEmail {
 		go func(order models.Order) {
-			buf, err := services.GenerateInvoiceBuffer(order, user.Name, product.Title)
+			buf, err := services.GenerateInvoiceBuffer(order, order.User.Name, productTitle)
 			if err == nil {
-				SendInvoiceEmail(user.Email, buf, order.Invoice)
+				SendInvoiceEmail(order.User.Email, buf, order.Invoice)
 			}
 		}(order)
 	}

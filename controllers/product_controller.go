@@ -459,7 +459,7 @@ func GetProductByID(c *gin.Context) {
 				"message": "Product retrieved from cache",
 				"data":    product,
 			})
-			fmt.Println("cache product id hit", product)
+			fmt.Println("cache product id hit")
 			return
 		}
 		redis.RedisClient.Del(ctx, key)
