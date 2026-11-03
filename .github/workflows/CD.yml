@@ -24,8 +24,10 @@ jobs:
 
             cd ~/subgame-server
 
-            git pull origin master
+            git fetch origin master
+            
+            git reset --hard origin/master
 
             docker compose -f docker-compose.prod.yml up -d --build app
 
-            docker compose ps
+            docker compose -f docker-compose.prod.yml ps
