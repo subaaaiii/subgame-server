@@ -19,7 +19,8 @@ func main() {
 	database.InitDB()
 
 	r := routes.SetupRouter()
-	services.StartExpireJob()
+	// services.StartExpireJob()
+	services.StartRedisSubscriber()
 
 	//mulai server
 	r.Run(":" + config.GetEnv("APP_PORT", "3000"))
